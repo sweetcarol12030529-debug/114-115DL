@@ -673,7 +673,7 @@
                 if (!rowStr.trim()) continue;
 
                 const cleanRowStr = rowStr.replace(/\s+/g, '').toLowerCase();
-                if (/小計|合計|總計|總金額|全計|累計|共計|subtotal|grandtotal|summary/i.test(cleanRowStr)) continue;
+                if (/小計|合計|總金額|全計|累計|共計|subtotal|grandtotal|summary/i.test(cleanRowStr)) continue;
 
                 if (domainCol !== -1 && row[domainCol]) {
                     const dVal = String(row[domainCol]).trim();
