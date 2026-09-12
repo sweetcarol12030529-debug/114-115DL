@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- SheetJS for Excel import/export -->
+    <!-- SheetJS for Excel / CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- Inter Font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -52,7 +52,6 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen pb-12">
 
-    <!-- Top Navigation / Action Bar -->
     <header class="bg-slate-900 text-white sticky top-0 z-50 shadow-md no-print">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-3">
@@ -61,29 +60,23 @@
                 </div>
                 <div>
                     <h1 class="text-lg font-bold tracking-wide">專案經費執行率儀表板</h1>
-                    <p class="text-xs text-slate-400">Excel 數據驅動動態分析系統</p>
+                    <p class="text-xs text-slate-400">Google 試算表即時連線分析系統</p>
                 </div>
             </div>
 
             <div class="flex items-center space-x-2 sm:space-x-3">
-                <!-- Excel Upload Input -->
-                <label class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center shadow">
-                    <i class="fa-solid fa-file-excel mr-2"></i>
-                    <span>匯入 Excel</span>
+                <!-- Refresh Data from Google Sheets -->
+                <button onclick="fetchGoogleSheetData()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center shadow" title="從 Google 試算表重新載入">
+                    <i class="fa-solid fa-rotate mr-1.5 sm:mr-2" id="refreshIcon"></i>
+                    <span>重新載入資料</span>
+                </button>
+
+                <!-- Optional File Upload Backup -->
+                <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center" title="上傳備用 Excel 檔案">
+                    <i class="fa-solid fa-file-excel mr-1.5 sm:mr-2"></i>
+                    <span class="hidden sm:inline">匯入檔案</span>
                     <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)">
                 </label>
-
-                <!-- Download Template Button -->
-                <button onclick="downloadExcelTemplate()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center" title="下載標準 Excel 範本">
-                    <i class="fa-solid fa-download mr-1.5 sm:mr-2"></i>
-                    <span class="hidden sm:inline">下載範本</span>
-                </button>
-
-                <!-- Reset Demo Data -->
-                <button onclick="loadDemoData()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center" title="載入預設示範資料">
-                    <i class="fa-solid fa-rotate-left mr-1.5 sm:mr-2"></i>
-                    <span class="hidden sm:inline">預設資料</span>
-                </button>
 
                 <!-- Print Report -->
                 <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center" title="列印或另存PDF">
@@ -93,22 +86,20 @@
         </div>
     </header>
 
-    <!-- Main Container -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-8">
 
         <!-- Banner Alert / Info -->
         <div id="fileInfoBanner" class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg shadow-sm flex items-center justify-between no-print">
             <div class="flex items-center space-x-3">
-                <i class="fa-solid fa-circle-info text-blue-500 text-lg"></i>
+                <i class="fa-solid fa-cloud-arrow-down text-blue-500 text-lg"></i>
                 <div>
-                    <p class="text-sm font-medium text-blue-900" id="currentSourceText">目前顯示：系統示範資料 (含總計畫執行中心)</p>
-                    <p class="text-xs text-blue-700">您可以透過右上方按鈕下載標準 Excel 範本，填入資料後重新匯入。</p>
+                    <p class="text-sm font-medium text-blue-900" id="currentSourceText">目前資料來源：Google 試算表連線中...</p>
+                    <p class="text-xs text-blue-700">資料來源網址已設定為指定的 Google 試算表，支援即時自動同步。</p>
                 </div>
             </div>
-            <span class="text-xs text-slate-500 bg-white px-2.5 py-1 rounded-full border border-slate-200" id="lastUpdatedTime">更新時間: 剛才</span>
+            <span class="text-xs text-slate-500 bg-white px-2.5 py-1 rounded-full border border-slate-200" id="lastUpdatedTime">更新時間: 載入中...</span>
         </div>
 
-        <!-- 板塊 1：計畫經費執行率 -->
         <section class="space-y-4">
             <div class="flex items-center justify-between border-b border-slate-200 pb-3">
                 <h2 class="text-xl font-bold text-slate-900 flex items-center">
@@ -181,7 +172,6 @@
             </div>
         </section>
 
-        <!-- 板塊 2：四大範疇執行率 -->
         <section class="space-y-4">
             <div class="flex items-center justify-between border-b border-slate-200 pb-3">
                 <h2 class="text-xl font-bold text-slate-900 flex items-center">
@@ -300,7 +290,6 @@
             </div>
         </section>
 
-        <!-- 板塊 3：總計畫及各範疇費用類別分析 -->
         <section class="space-y-4">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-2">
                 <h2 class="text-xl font-bold text-slate-900 flex items-center">
@@ -430,7 +419,6 @@
             </div>
         </section>
 
-        <!-- 板塊 4：子計畫的人事費、業務費、設備費、配合款 -->
         <section class="space-y-4">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-2">
                 <h2 class="text-xl font-bold text-slate-900 flex items-center">
@@ -464,23 +452,27 @@
         let currentDomainTab = 'ALL';
         let charts = {};
 
-        // Default Demo Data Structure (including 總計畫執行中心)
-        const demoData = [
-            { domain: '總計畫', subProject: '總計畫執行中心', category: '人事費', approved: 3500000, expended: 2800000 },
-            { domain: '總計畫', subProject: '總計畫執行中心', category: '業務費', approved: 2500000, expended: 1900000 },
-            { domain: '總計畫', subProject: '總計畫執行中心', category: '設備費', approved: 1000000, expended: 800000 },
-            { domain: '總計畫', subProject: '總計畫執行中心', category: '配合款', approved: 500000, expended: 400000 },
-
-            { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '人事費', approved: 45000000, expended: 36000000 },
-            { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '業務費', approved: 25000000, expended: 19000000 },
-            { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '設備費', approved: 35000000, expended: 30000000 },
-            { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '配合款', approved: 6000000, expended: 5000000 },
-
-            { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '人事費', approved: 15000000, expended: 11000000 },
-            { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '業務費', approved: 6333333, expended: 5000000 },
-            { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '設備費', approved: 6000000, expended: 4500000 },
-            { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '配合款', approved: 4985892, expended: 4000000 }
-        ];
+        // Google Spreadsheet Target URL
+        const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1IMYFXoQJW2Zfr9H0jBGt-x4KWv8-HlwK/edit?gid=1241841548#gid=1241841548";
+        
+        // Convert public Google Sheets URL to CSV export URL
+        function getGoogleSheetCsvUrls(url) {
+            const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            if (!match) return [url];
+            const spreadsheetId = match[1];
+            
+            let gid = '0';
+            const gidMatch = url.match(/[#&]gid=([0-9]+)/);
+            if (gidMatch) {
+                gid = gidMatch[1];
+            }
+            // Return direct export URL and CORS proxy fallbacks
+            return [
+                `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`)}`,
+                `https://corsproxy.io/?` + encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`)
+            ];
+        }
 
         // Format Currency
         function formatCurrency(num) {
@@ -533,14 +525,76 @@
                    /^(小計|合計|總計|全計|累計|共計)/i.test(s);
         }
 
+        // Automatically fetch data from Google Sheets on page load
         window.onload = function() {
-            loadDemoData();
+            fetchGoogleSheetData();
         };
 
-        function loadDemoData() {
-            rawBudgetData = JSON.parse(JSON.stringify(demoData));
+        async function fetchGoogleSheetData() {
+            const urls = getGoogleSheetCsvUrls(GOOGLE_SHEET_URL);
+            const refreshIcon = document.getElementById('refreshIcon');
+            if (refreshIcon) refreshIcon.classList.add('fa-spin');
+            
+            document.getElementById('currentSourceText').innerText = "目前資料來源：正在從 Google 試算表同步資料...";
+
+            let csvText = null;
+            for (let i = 0; i < urls.length; i++) {
+                try {
+                    const response = await fetch(urls[i]);
+                    if (response.ok) {
+                        csvText = await response.text();
+                        if (csvText && csvText.length > 10 && !csvText.includes('<!DOCTYPE html>')) {
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`嘗試端點 ${i} 失敗:`, e);
+                }
+            }
+
+            if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+
+            if (csvText) {
+                try {
+                    const workbook = XLSX.read(csvText, { type: 'string' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    const parsedData = parseSheetData(worksheet, firstSheetName);
+                    if (parsedData && parsedData.length > 0) {
+                        rawBudgetData = parsedData;
+                        currentDomainTab = 'ALL';
+                        document.getElementById('currentSourceText').innerText = "目前資料來源：Google 試算表 (即時連線成功)";
+                        updateLastUpdatedTime();
+                        renderDashboard();
+                        return;
+                    }
+                } catch (parseErr) {
+                    console.error("解析 CSV 失敗:", parseErr);
+                }
+            }
+
+            // Fallback to sample demo dataset if fetch or parse fails
+            loadDemoDataOnError("無法直接載入 Google 試算表內容 (Google 權限或跨域限制)。已自動載入完整範例數據，您可以點擊「匯入檔案」上傳您的 Excel 檔案。");
+        }
+
+        function loadDemoDataOnError(msg) {
+            rawBudgetData = [
+                { domain: '總計畫', subProject: '總計畫執行中心', category: '人事費', approved: 3500000, expended: 2800000 },
+                { domain: '總計畫', subProject: '總計畫執行中心', category: '業務費', approved: 2500000, expended: 1900000 },
+                { domain: '總計畫', subProject: '總計畫執行中心', category: '設備費', approved: 1000000, expended: 800000 },
+                { domain: '總計畫', subProject: '總計畫執行中心', category: '配合款', approved: 500000, expended: 400000 },
+                { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '人事費', approved: 45000000, expended: 36000000 },
+                { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '業務費', approved: 25000000, expended: 19000000 },
+                { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '設備費', approved: 35000000, expended: 30000000 },
+                { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '配合款', approved: 6000000, expended: 5000000 },
+                { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '人事費', approved: 15000000, expended: 11000000 },
+                { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '業務費', approved: 6333333, expended: 5000000 },
+                { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '設備費', approved: 6000000, expended: 4500000 },
+                { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '配合款', approved: 4985892, expended: 4000000 }
+            ];
             currentDomainTab = 'ALL';
-            document.getElementById('currentSourceText').innerText = "目前顯示：預設範例資料 (含總計畫執行中心)";
+            document.getElementById('currentSourceText').innerText = msg;
             updateLastUpdatedTime();
             renderDashboard();
         }
@@ -572,7 +626,7 @@
                     }
 
                     if (parsedData.length === 0) {
-                        alert("未能成功解析出有效的經費資料！請確認 Excel 檔案格式。");
+                        alert("未能成功解析出有效的經費資料！請確認檔案格式。");
                         return;
                     }
 
@@ -584,7 +638,7 @@
 
                 } catch (err) {
                     console.error(err);
-                    alert("解析 Excel 檔案失敗！請確定檔案格式正確。\n錯誤訊息: " + err.message);
+                    alert("解析檔案失敗！請確定檔案格式正確。\n錯誤訊息: " + err.message);
                 }
             };
             reader.readAsArrayBuffer(file);
@@ -745,27 +799,6 @@
             return parsedData;
         }
 
-        function downloadExcelTemplate() {
-            const templateData = [
-                {
-                    "範疇": "總計畫",
-                    "子計畫名稱": "總計畫執行中心",
-                    "人事費核准金額": 3500000,
-                    "人事費已核銷金額": 2800000,
-                    "業務費核准金額": 2500000,
-                    "業務費已核銷金額": 1900000,
-                    "設備費核准金額": 1000000,
-                    "設備費已核銷金額": 800000,
-                    "配合款核准金額": 500000,
-                    "配合款已核銷金額": 400000
-                }
-            ];
-            const worksheet = XLSX.utils.json_to_sheet(templateData);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "專案經費總表");
-            XLSX.writeFile(workbook, "專案經費儀表板_標準匯入範本.xlsx");
-        }
-
         // Main Dashboard Render Method
         function renderDashboard() {
             renderSection1_Overall();
@@ -811,10 +844,11 @@
         }
 
         function renderSection1_Overall() {
-            let totalApproved = 143318225;
+            let totalApproved = 0;
             let totalExpended = 0;
 
             rawBudgetData.forEach(item => {
+                totalApproved += Number(item.approved || 0);
                 totalExpended += Number(item.expended || 0);
             });
 
@@ -831,7 +865,7 @@
         }
 
         function renderSection2_Domains() {
-            let subsidyApproved = 132333333;
+            let subsidyApproved = 0;
             let subsidyExpended = 0;
             let matchingApproved = 0;
             let matchingExpended = 0;
@@ -845,6 +879,7 @@
                     matchingApproved += Number(item.approved || 0);
                     matchingExpended += Number(item.expended || 0);
                 } else {
+                    subsidyApproved += Number(item.approved || 0);
                     subsidyExpended += Number(item.expended || 0);
                 }
 
