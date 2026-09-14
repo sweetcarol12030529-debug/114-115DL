@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>計畫經費執行率動態儀表板</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS for Excel / CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Microsoft JhengHei', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', 'Microsoft JhengHei', sans-serif; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+        @media print {
+            .no-print { display: none !important; }
+            .print-full { width: 100% !important; margin: 0 !important; padding: 0 !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen pb-12">
+
+    <header class="bg-slate-900 text-white sticky top-0 z-50 shadow-md no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600 p-2 rounded-lg text-white">
+                    <i class="fa-solid fa-chart-pie text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-wide">專案經費執行率儀表板</h1>
+                    <p class="text-xs text-slate-400">Google 試算表即時連線分析系統</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <!-- Refresh Data from Google Sheets -->
+                <button onclick="fetchGoogleSheetData()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center shadow" title="從 Google 試算表重新載入">
+                    <i class="fa-solid fa-rotate mr-1.5 sm:mr-2" id="refreshIcon"></i>
+                    <span>重新載入資料</span>
+                </button>
+
+                <!-- Optional File Upload Backup -->
+                <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center" title="上傳備用 Excel 檔案">
+                    <i class="fa-solid fa-file-excel mr-1.5 sm:mr-2"></i>
+                    <span class="hidden sm:inline">匯入檔案</span>
+                    <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)">
+                </label>
+
+                <!-- Print Report -->
+                <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center" title="列印或另存PDF">
+                    <i class="fa-solid fa-print"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-8">
+
+        <!-- Banner Alert / Info -->
+        <div id="fileInfoBanner" class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg shadow-sm flex items-center justify-between no-print">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-cloud-arrow-down text-blue-500 text-lg"></i>
+                <div>
+                    <p class="text-sm font-medium text-blue-900" id="currentSourceText">目前資料來源：Google 試算表連線中...</p>
+                    <p class="text-xs text-blue-700">資料來源網址已設定為指定的 Google 試算表，支援即時自動同步。</p>
+                </div>
+            </div>
+            <span class="text-xs text-slate-500 bg-white px-2.5 py-1 rounded-full border border-slate-200" id="lastUpdatedTime">更新時間: 載入中...</span>
+        </div>
+
+        <section class="space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+                <h2 class="text-xl font-bold text-slate-900 flex items-center">
+                    <span class="w-2.5 h-6 bg-blue-600 rounded-full mr-3"></span>
+                    1. 計畫經費執行率
+                </h2>
+                <span class="text-xs font-semibold px-2.5 py-1 bg-slate-200 text-slate-700 rounded-md">總覽指標</span>
+            </div>
+
+            <!-- Total Budget KPI Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- 核准金額 -->
+                <div class="glass-card p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs font-semibold uppercase text-slate-500 tracking-wider">核准金額</p>
+                            <h3 class="text-2xl font-extrabold text-slate-800 mt-1" id="totalApproved">$0</h3>
+                        </div>
+                        <div class="p-3 bg-blue-50 text-blue-600 rounded-lg">
+                            <i class="fa-solid fa-wallet text-xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-3">專案預算總額度 (含補助款與配合款)</p>
+                </div>
+
+                <!-- 已核銷金額 -->
+                <div class="glass-card p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs font-semibold uppercase text-slate-500 tracking-wider">已核銷金額</p>
+                            <h3 class="text-2xl font-extrabold text-emerald-600 mt-1" id="totalExpended">$0</h3>
+                        </div>
+                        <div class="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+                            <i class="fa-solid fa-circle-check text-xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-3">累積已報銷支出</p>
+                </div>
+
+                <!-- 剩餘金額 -->
+                <div class="glass-card p-5 rounded-xl shadow-sm border border-slate-200/80">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs font-semibold uppercase text-slate-500 tracking-wider">剩餘金額</p>
+                            <h3 class="text-2xl font-extrabold text-amber-600 mt-1" id="totalRemaining">$0</h3>
+                        </div>
+                        <div class="p-3 bg-amber-50 text-amber-600 rounded-lg">
+                            <i class="fa-solid fa-piggy-bank text-xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-3">尚可使用額度</p>
+                </div>
+
+                <!-- 執行率 -->
+                <div class="glass-card p-5 rounded-xl shadow-sm border border-slate-200/80 flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-xs font-semibold uppercase text-slate-500 tracking-wider">執行率</p>
+                            <h3 class="text-2xl font-extrabold text-blue-600 mt-1" id="totalRate">0.0%</h3>
+                        </div>
+                        <div class="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
+                            <i class="fa-solid fa-chart-line text-xl"></i>
+                        </div>
+                    </div>
+                    <!-- ProgressBar -->
+                    <div class="w-full bg-slate-100 rounded-full h-2.5 mt-3 overflow-hidden">
+                        <div id="totalProgressBar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+                <h2 class="text-xl font-bold text-slate-900 flex items-center">
+                    <span class="w-2.5 h-6 bg-emerald-600 rounded-full mr-3"></span>
+                    2. 四大範疇執行率 (補助款 vs 配合款)
+                </h2>
+                <span class="text-xs font-semibold px-2.5 py-1 bg-slate-200 text-slate-700 rounded-md">經費來源剖析</span>
+            </div>
+
+            <!-- Grid for Subsidy and Matching Summary Cards -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 補助款 Summary Card -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div class="flex items-center space-x-2">
+                            <span class="p-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold"><i class="fa-solid fa-hand-holding-dollar"></i></span>
+                            <h3 class="font-bold text-slate-800 text-lg">補助款 (Subsidy: 人事/業務/設備)</h3>
+                        </div>
+                        <span id="subsidyRateBadge" class="text-sm font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                            0.0% 執行率
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-slate-50 p-3 rounded-lg">
+                            <p class="text-xs text-slate-500">核准金額</p>
+                            <p class="text-base font-bold text-slate-800 mt-1" id="subsidyApproved">$0</p>
+                        </div>
+                        <div class="bg-emerald-50 p-3 rounded-lg">
+                            <p class="text-xs text-emerald-600">已核銷金額</p>
+                            <p class="text-base font-bold text-emerald-700 mt-1" id="subsidyExpended">$0</p>
+                        </div>
+                        <div class="bg-amber-50 p-3 rounded-lg">
+                            <p class="text-xs text-amber-600">剩餘金額</p>
+                            <p class="text-base font-bold text-amber-700 mt-1" id="subsidyRemaining">$0</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-500">
+                            <span>執行進度</span>
+                            <span id="subsidyProgressText">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div id="subsidyProgressBar" class="bg-blue-600 h-2 transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 配合款 Summary Card -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div class="flex items-center space-x-2">
+                            <span class="p-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-bold"><i class="fa-solid fa-building-columns"></i></span>
+                            <h3 class="font-bold text-slate-800 text-lg">配合款 (Matching Fund)</h3>
+                        </div>
+                        <span id="matchingRateBadge" class="text-sm font-bold px-3 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                            0.0% 執行率
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-slate-50 p-3 rounded-lg">
+                            <p class="text-xs text-slate-500">核准金額</p>
+                            <p class="text-base font-bold text-slate-800 mt-1" id="matchingApproved">$0</p>
+                        </div>
+                        <div class="bg-emerald-50 p-3 rounded-lg">
+                            <p class="text-xs text-emerald-600">已核銷金額</p>
+                            <p class="text-base font-bold text-emerald-700 mt-1" id="matchingExpended">$0</p>
+                        </div>
+                        <div class="bg-amber-50 p-3 rounded-lg">
+                            <p class="text-xs text-amber-600">剩餘金額</p>
+                            <p class="text-base font-bold text-amber-700 mt-1" id="matchingRemaining">$0</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-500">
+                            <span>執行進度</span>
+                            <span id="matchingProgressText">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div id="matchingProgressBar" class="bg-purple-600 h-2 transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4 Domains Chart & Table Breakdown -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-base font-bold text-slate-800 mb-4">四大範疇執行狀況明細比較</h3>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
+                    <!-- Domain Comparison Chart -->
+                    <div class="lg:col-span-1 h-64">
+                        <canvas id="domainChart"></canvas>
+                    </div>
+
+                    <!-- Domain Cards / Table -->
+                    <div class="lg:col-span-2 overflow-x-auto">
+                        <table class="w-full text-sm text-left text-slate-600">
+                            <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+                                <tr>
+                                    <th class="py-3 px-4 rounded-l-lg">範疇名稱</th>
+                                    <th class="py-3 px-4 text-right">核准金額</th>
+                                    <th class="py-3 px-4 text-right">已核銷金額</th>
+                                    <th class="py-3 px-4 text-right">剩餘金額</th>
+                                    <th class="py-3 px-4 text-center rounded-r-lg">執行率</th>
+                                </tr>
+                            </thead>
+                            <tbody id="domainTableBody" class="divide-y divide-slate-100">
+                                <!-- Dynamic Render -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-2">
+                <h2 class="text-xl font-bold text-slate-900 flex items-center">
+                    <span class="w-2.5 h-6 bg-purple-600 rounded-full mr-3"></span>
+                    3. 總計畫及各範疇費用類別分析
+                </h2>
+                
+                <!-- Category Domain Selector Tab -->
+                <div class="flex space-x-1 bg-slate-200 p-1 rounded-lg no-print overflow-x-auto max-w-full" id="domainTabGroup">
+                    <!-- Dynamically Populated Tabs -->
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-bold text-slate-800" id="currentDomainTabTitle">計畫 - 各費用類別執行狀態</h3>
+                    <span class="text-xs bg-purple-50 text-purple-700 px-2.5 py-1 rounded border border-purple-200 font-medium" id="currentDomainLabel">全計畫檢視</span>
+                </div>
+
+                <!-- 4 Expense Items Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="expenseCategoryCards">
+                    <!-- Card 1: 人事費 -->
+                    <div class="p-4 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">人事費</span>
+                            <span id="rate-人事費" class="text-xs font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">0.0%</span>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">核准金額</p>
+                            <p id="approved-人事費" class="text-lg font-bold text-slate-800">$0</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-100">
+                            <div>
+                                <span class="text-slate-400 block">已核銷</span>
+                                <span id="expended-人事費" class="font-semibold text-emerald-600">$0</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">剩餘</span>
+                                <span id="remaining-人事費" class="font-semibold text-amber-600">$0</span>
+                            </div>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div id="progress-人事費" class="bg-blue-600 h-1.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Card 2: 業務費 -->
+                    <div class="p-4 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">業務費</span>
+                            <span id="rate-業務費" class="text-xs font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">0.0%</span>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">核准金額</p>
+                            <p id="approved-業務費" class="text-lg font-bold text-slate-800">$0</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-100">
+                            <div>
+                                <span class="text-slate-400 block">已核銷</span>
+                                <span id="expended-業務費" class="font-semibold text-emerald-600">$0</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">剩餘</span>
+                                <span id="remaining-業務費" class="font-semibold text-amber-600">$0</span>
+                            </div>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div id="progress-業務費" class="bg-blue-600 h-1.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Card 3: 設備費 -->
+                    <div class="p-4 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">設備費</span>
+                            <span id="rate-設備費" class="text-xs font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">0.0%</span>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">核准金額</p>
+                            <p id="approved-設備費" class="text-lg font-bold text-slate-800">$0</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-100">
+                            <div>
+                                <span class="text-slate-400 block">已核銷</span>
+                                <span id="expended-設備費" class="font-semibold text-emerald-600">$0</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">剩餘</span>
+                                <span id="remaining-設備費" class="font-semibold text-amber-600">$0</span>
+                            </div>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div id="progress-設備費" class="bg-blue-600 h-1.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Card 4: 配合款 -->
+                    <div class="p-4 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs font-bold text-slate-600 uppercase tracking-wide">配合款</span>
+                            <span id="rate-配合款" class="text-xs font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800">0.0%</span>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">核准金額</p>
+                            <p id="approved-配合款" class="text-lg font-bold text-slate-800">$0</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-100">
+                            <div>
+                                <span class="text-slate-400 block">已核銷</span>
+                                <span id="expended-配合款" class="font-semibold text-emerald-600">$0</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block">剩餘</span>
+                                <span id="remaining-配合款" class="font-semibold text-amber-600">$0</span>
+                            </div>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div id="progress-配合款" class="bg-purple-600 h-1.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expense Category Chart -->
+                <div class="h-64 mt-4">
+                    <canvas id="expenseCategoryChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-2">
+                <h2 class="text-xl font-bold text-slate-900 flex items-center">
+                    <span class="w-2.5 h-6 bg-amber-500 rounded-full mr-3"></span>
+                    4. 子計畫經費執行率明細
+                </h2>
+
+                <!-- Sub-project Filter & Search -->
+                <div class="flex items-center space-x-2 no-print">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                        <input type="text" id="subProjectSearch" onkeyup="filterSubProjects()" placeholder="搜尋子計畫..." class="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-40 sm:w-56">
+                    </div>
+                    <select id="subProjectDomainFilter" onchange="filterSubProjects()" class="py-1.5 px-3 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="ALL">全部範疇</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Sub Projects Accordion / Cards List -->
+            <div id="subProjectsList" class="space-y-4">
+                <!-- Dynamically Populated Sub-Projects Cards -->
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // Global Data Store
+        let rawBudgetData = [];
+        let currentDomainTab = 'ALL';
+        let charts = {};
+
+        // Google Spreadsheet Target URL
+        const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1vysQH9wXIO_00RLxVOuNcqmgF7XYU2bAFAhlqeXlZKE/edit?gid=0#gid=0";
+        
+        // Convert public Google Sheets URL to CSV export URL
+        function getGoogleSheetCsvUrls(url) {
+            const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            if (!match) return [url];
+            const spreadsheetId = match[1];
+            
+            let gid = '0';
+            const gidMatch = url.match(/[#&]gid=([0-9]+)/);
+            if (gidMatch) {
+                gid = gidMatch[1];
+            }
+            // Return direct export URL and CORS proxy fallbacks
+            return [
+                `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`)}`,
+                `https://corsproxy.io/?` + encodeURIComponent(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`)
+            ];
+        }
+
+        // Format Currency
+        function formatCurrency(num) {
+            return '$' + Math.round(Number(num || 0)).toLocaleString('en-US');
+        }
+
+        // Format Percentage
+        function formatPercent(num) {
+            return (Number(num || 0)).toFixed(1) + '%';
+        }
+
+        // Robust Number Parsing
+        function parseNum(val) {
+            if (val === null || val === undefined || val === '') return 0;
+            if (typeof val === 'number') return isNaN(val) ? 0 : val;
+            let str = String(val).trim();
+            if (!str) return 0;
+            if (str.includes('%')) return 0;
+
+            let isNegative = false;
+            if ((str.startsWith('(') && str.endsWith(')')) || str.startsWith('-')) {
+                isNegative = true;
+            }
+            
+            str = str.replace(/[$NTNT$元,\s]/g, '');
+            const match = str.match(/-?\d+(\.\d+)?/);
+            if (!match) return 0;
+            
+            const num = parseFloat(match[0]);
+            if (isNaN(num)) return 0;
+            return isNegative ? -Math.abs(num) : num;
+        }
+
+        // Standardize Expense Category Name
+        function normalizeCategory(str) {
+            if (!str) return '業務費';
+            const s = String(str).toLowerCase().trim();
+            if (/人事|personnel|人資|人力|薪資|出席費/i.test(s)) return '人事費';
+            if (/設備|資本|儀器|equipment|軟體|硬體/i.test(s)) return '設備費';
+            if (/配合|自籌|matching|學校配合|企業配合/i.test(s)) return '配合款';
+            if (/業務|經常|辦公|旅費|材料|雜項|operational/i.test(s)) return '業務費';
+            return '業務費';
+        }
+
+        // Check summary row
+        function isSummaryText(str) {
+            if (!str) return false;
+            const s = String(str).trim().toLowerCase().replace(/\s+/g, '');
+            return /^(小計|合計|總計|總金額|total|subtotal|grandtotal|全計|累計|共計)$/i.test(s) || 
+                   /^(小計|合計|總計|全計|累計|共計)/i.test(s);
+        }
+
+        // Automatically fetch data from Google Sheets on page load
+        window.onload = function() {
+            fetchGoogleSheetData();
+        };
+
+        async function fetchGoogleSheetData() {
+            const urls = getGoogleSheetCsvUrls(GOOGLE_SHEET_URL);
+            const refreshIcon = document.getElementById('refreshIcon');
+            if (refreshIcon) refreshIcon.classList.add('fa-spin');
+            
+            document.getElementById('currentSourceText').innerText = "目前資料來源：正在從 Google 試算表同步資料...";
+
+            let csvText = null;
+            for (let i = 0; i < urls.length; i++) {
+                try {
+                    const response = await fetch(urls[i]);
+                    if (response.ok) {
+                        csvText = await response.text();
+                        if (csvText && csvText.length > 10 && !csvText.includes('<!DOCTYPE html>')) {
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`嘗試端點 ${i} 失敗:`, e);
+                }
+            }
+
+            if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+
+            if (csvText) {
+                try {
+                    const workbook = XLSX.read(csvText, { type: 'string' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    const parsedData = parseSheetData(worksheet, firstSheetName);
+                    if (parsedData && parsedData.length > 0) {
+                        rawBudgetData = parsedData;
+                        currentDomainTab = 'ALL';
+                        document.getElementById('currentSourceText').innerText = "目前資料來源：Google 試算表 (即時連線成功)";
+                        updateLastUpdatedTime();
+                        renderDashboard();
+                        return;
+                    }
+                } catch (parseErr) {
+                    console.error("解析 CSV 失敗:", parseErr);
+                }
+            }
+
+            // Fallback to sample demo dataset if fetch or parse fails
+            loadDemoDataOnError("無法直接載入 Google 試算表內容 (Google 權限或跨域限制)。已自動載入完整範例數據，您可以點擊「匯入檔案」上傳您的 Excel 檔案。");
+        }
+
+        function loadDemoDataOnError(msg) {
+            rawBudgetData = [
+                { domain: '總計畫', subProject: '總計畫執行中心', category: '人事費', approved: 3500000, expended: 2800000 },
+                { domain: '總計畫', subProject: '總計畫執行中心', category: '業務費', approved: 2500000, expended: 1900000 },
+                { domain: '總計畫', subProject: '總計畫執行中心', category: '設備費', approved: 1000000, expended: 800000 },
+                { domain: '總計畫', subProject: '總計畫執行中心', category: '配合款', approved: 500000, expended: 400000 },
+                { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '人事費', approved: 45000000, expended: 36000000 },
+                { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '業務費', approved: 25000000, expended: 19000000 },
+                { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '設備費', approved: 35000000, expended: 30000000 },
+                { domain: '範疇一', subProject: '子計畫 1-1：前瞻技術研發', category: '配合款', approved: 6000000, expended: 5000000 },
+                { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '人事費', approved: 15000000, expended: 11000000 },
+                { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '業務費', approved: 6333333, expended: 5000000 },
+                { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '設備費', approved: 6000000, expended: 4500000 },
+                { domain: '範疇二', subProject: '子計畫 2-1：系統整合驗證', category: '配合款', approved: 4985892, expended: 4000000 }
+            ];
+            currentDomainTab = 'ALL';
+            document.getElementById('currentSourceText').innerText = msg;
+            updateLastUpdatedTime();
+            renderDashboard();
+        }
+
+        function updateLastUpdatedTime() {
+            const now = new Date();
+            document.getElementById('lastUpdatedTime').innerText = `更新時間: ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    
+                    let parsedData = [];
+
+                    for (const sheetName of workbook.SheetNames) {
+                        if (/目錄|Index|Cover|說明|Help|Pivot|Chart|模板|範本/i.test(sheetName)) continue;
+                        const worksheet = workbook.Sheets[sheetName];
+                        const res = parseSheetData(worksheet, sheetName);
+                        if (res && res.length > 0) {
+                            parsedData = parsedData.concat(res);
+                        }
+                    }
+
+                    if (parsedData.length === 0) {
+                        alert("未能成功解析出有效的經費資料！請確認檔案格式。");
+                        return;
+                    }
+
+                    rawBudgetData = parsedData;
+                    currentDomainTab = 'ALL';
+                    document.getElementById('currentSourceText').innerText = `目前顯示：匯入檔案 (${file.name})`;
+                    updateLastUpdatedTime();
+                    renderDashboard();
+
+                } catch (err) {
+                    console.error(err);
+                    alert("解析檔案失敗！請確定檔案格式正確。\n錯誤訊息: " + err.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function parseSheetData(worksheet, sheetName = 'Sheet') {
+            const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+            if (!rawMatrix || rawMatrix.length === 0) return [];
+
+            const matrix = rawMatrix.map(row => 
+                (Array.isArray(row) ? row : []).map(cell => cell !== null && cell !== undefined ? String(cell).trim() : '')
+            );
+
+            let maxCols = 0;
+            matrix.forEach(r => { if (r.length > maxCols) maxCols = r.length; });
+
+            let headerStartRow = 0;
+            let headerEndRow = 0;
+
+            for (let i = 0; i < Math.min(10, matrix.length); i++) {
+                const rowText = matrix[i].join(' ');
+                if (/範疇|子計畫|人事|業務|設備|配合|核准|核銷|預算|金額|實支/i.test(rowText)) {
+                    headerStartRow = i;
+                    if (i + 1 < matrix.length) {
+                        const nextRowText = matrix[i + 1].join(' ');
+                        if (/核准|核銷|預算|實支|支出|金額|剩餘|餘額|率|%/i.test(nextRowText) && 
+                            !/範疇|子計畫 1|子計畫 2/i.test(nextRowText)) {
+                            headerEndRow = i + 1;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            const colHeaders = [];
+            if (headerEndRow > headerStartRow) {
+                const topRow = [...matrix[headerStartRow]];
+                const botRow = [...matrix[headerEndRow]];
+
+                let lastTop = '';
+                for (let c = 0; c < maxCols; c++) {
+                    const topCell = topRow[c] || '';
+                    if (topCell && !/核准|核銷|預算|實支|金額|剩餘|餘額|率/i.test(topCell)) {
+                        lastTop = topCell;
+                    } else if (!topCell && lastTop) {
+                        topRow[c] = lastTop;
+                    }
+                }
+
+                for (let c = 0; c < maxCols; c++) {
+                    const top = topRow[c] || '';
+                    const bot = botRow[c] || '';
+                    colHeaders.push(`${top} ${bot}`.trim());
+                }
+            } else {
+                for (let c = 0; c < maxCols; c++) {
+                    colHeaders.push(matrix[headerStartRow][c] || `Col_${c}`);
+                }
+            }
+
+            const dataStartRow = headerEndRow > 0 ? headerEndRow + 1 : headerStartRow + 1;
+
+            let domainCol = -1;
+            let subProjectCol = -1;
+
+            colHeaders.forEach((h, colIdx) => {
+                const hClean = h.replace(/\s+/g, '');
+                if (domainCol === -1 && /範疇|領域|主計畫|Domain/i.test(hClean)) domainCol = colIdx;
+                if (subProjectCol === -1 && /子計畫|子專案|項目名稱|計畫名稱|子項目|Subproject/i.test(hClean)) subProjectCol = colIdx;
+            });
+
+            if (subProjectCol === -1) {
+                colHeaders.forEach((h, colIdx) => {
+                    if (colIdx !== domainCol && /計畫|名稱|項目/i.test(h)) subProjectCol = colIdx;
+                });
+            }
+
+            const parsedData = [];
+            let currentDomain = '總計畫';
+            let currentSubProject = '總計畫執行中心';
+
+            for (let r = dataStartRow; r < matrix.length; r++) {
+                const row = matrix[r];
+                if (!row || row.length === 0) continue;
+                const rowStr = row.join(' ');
+                if (!rowStr.trim()) continue;
+
+                const cleanRowStr = rowStr.replace(/\s+/g, '').toLowerCase();
+                if (/小計|合計|總金額|全計|累計|共計|subtotal|grandtotal|summary/i.test(cleanRowStr)) continue;
+
+                if (domainCol !== -1 && row[domainCol]) {
+                    const dVal = String(row[domainCol]).trim();
+                    if (dVal && !isSummaryText(dVal)) currentDomain = dVal;
+                }
+
+                if (subProjectCol !== -1 && row[subProjectCol]) {
+                    const sVal = String(row[subProjectCol]).trim();
+                    if (sVal && !isSummaryText(sVal)) currentSubProject = sVal;
+                }
+
+                if (isSummaryText(currentSubProject) || isSummaryText(currentDomain)) continue;
+
+                const rowDataMap = {
+                    '人事費': { approved: 0, expended: 0 },
+                    '業務費': { approved: 0, expended: 0 },
+                    '設備費': { approved: 0, expended: 0 },
+                    '配合款': { approved: 0, expended: 0 }
+                };
+
+                colHeaders.forEach((h, colIdx) => {
+                    if (colIdx === domainCol || colIdx === subProjectCol) return;
+                    const hLower = h.toLowerCase().trim();
+
+                    if (/剩餘|餘額|差額|尚未|可支用|執行率|達成率|進度|比率|率|%|小計|合計|總計|總金額|總預算|備註|說明|序號|id/i.test(hLower)) {
+                        return;
+                    }
+
+                    const rawVal = row[colIdx];
+                    const val = parseNum(rawVal);
+                    if (val === 0 && (rawVal === '' || rawVal === null || rawVal === undefined)) return;
+
+                    let cat = null;
+                    if (/配合|自籌|matching/i.test(hLower)) {
+                        cat = '配合款';
+                    } else if (/人事|personnel|人力|薪資/i.test(hLower)) {
+                        cat = '人事費';
+                    } else if (/設備|資本|儀器|equipment|軟體|硬體/i.test(hLower)) {
+                        cat = '設備費';
+                    } else if (/業務|經常|辦公|operational|旅費|材料|雜項/i.test(hLower)) {
+                        cat = '業務費';
+                    } else {
+                        return;
+                    }
+
+                    if (cat) {
+                        if (/已核銷|核銷|支出|實支|已支|已用|報銷|已撥款|實報|expended|spent|used|actual/i.test(hLower)) {
+                            rowDataMap[cat].expended += val;
+                        } else {
+                            rowDataMap[cat].approved += val;
+                        }
+                    }
+                });
+
+                Object.keys(rowDataMap).forEach(cat => {
+                    const item = rowDataMap[cat];
+                    if (item.approved !== 0 || item.expended !== 0) {
+                        parsedData.push({
+                            domain: currentDomain,
+                            subProject: currentSubProject,
+                            category: cat,
+                            approved: item.approved,
+                            expended: item.expended
+                        });
+                    }
+                });
+            }
+
+            return parsedData;
+        }
+
+        // Main Dashboard Render Method
+        function renderDashboard() {
+            renderSection1_Overall();
+            renderSection2_Domains();
+            renderDomainTabs();
+            renderSection3_DomainCategoryTab(currentDomainTab);
+            renderSubProjectFilterDropdown();
+            renderSection4_SubProjects();
+        }
+
+        function renderDomainTabs() {
+            const container = document.getElementById('domainTabGroup');
+            container.innerHTML = '';
+            const domains = Array.from(new Set(rawBudgetData.map(item => item.domain)));
+
+            const allBtn = document.createElement('button');
+            allBtn.onclick = () => switchDomainCategoryTab('ALL');
+            allBtn.className = `tab-btn px-3 py-1.5 rounded-md text-xs font-semibold ${currentDomainTab === 'ALL' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'} transition`;
+            allBtn.innerText = '全計畫';
+            container.appendChild(allBtn);
+
+            domains.forEach(d => {
+                const btn = document.createElement('button');
+                btn.onclick = () => switchDomainCategoryTab(d);
+                btn.className = `tab-btn px-3 py-1.5 rounded-md text-xs font-semibold ${currentDomainTab === d ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600 hover:text-slate-900'} transition`;
+                btn.innerText = d;
+                container.appendChild(btn);
+            });
+        }
+
+        function renderSubProjectFilterDropdown() {
+            const dropdown = document.getElementById('subProjectDomainFilter');
+            const currentSelected = dropdown.value || 'ALL';
+            dropdown.innerHTML = '<option value="ALL">全部範疇</option>';
+            const domains = Array.from(new Set(rawBudgetData.map(item => item.domain)));
+            domains.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.innerText = d;
+                dropdown.appendChild(opt);
+            });
+            dropdown.value = domains.includes(currentSelected) ? currentSelected : 'ALL';
+        }
+
+        function renderSection1_Overall() {
+            let totalApproved = 0;
+            let totalExpended = 0;
+
+            rawBudgetData.forEach(item => {
+                totalApproved += Number(item.approved || 0);
+                totalExpended += Number(item.expended || 0);
+            });
+
+            const totalRemaining = totalApproved - totalExpended;
+            const totalRate = totalApproved > 0 ? (totalExpended / totalApproved) * 100 : 0;
+
+            document.getElementById('totalApproved').innerText = formatCurrency(totalApproved);
+            document.getElementById('totalExpended').innerText = formatCurrency(totalExpended);
+            document.getElementById('totalRemaining').innerText = formatCurrency(totalRemaining);
+            document.getElementById('totalRate').innerText = formatPercent(totalRate);
+
+            const progressBar = document.getElementById('totalProgressBar');
+            progressBar.style.width = Math.min(totalRate, 100) + '%';
+        }
+
+        function renderSection2_Domains() {
+            let subsidyApproved = 0;
+            let subsidyExpended = 0;
+            let matchingApproved = 0;
+            let matchingExpended = 0;
+            
+            const domainMap = {};
+
+            rawBudgetData.forEach(item => {
+                const normalizedCat = normalizeCategory(item.category);
+                
+                if (normalizedCat === '配合款') {
+                    matchingApproved += Number(item.approved || 0);
+                    matchingExpended += Number(item.expended || 0);
+                } else {
+                    subsidyApproved += Number(item.approved || 0);
+                    subsidyExpended += Number(item.expended || 0);
+                }
+
+                if (!domainMap[item.domain]) {
+                    domainMap[item.domain] = { approved: 0, expended: 0 };
+                }
+                domainMap[item.domain].approved += Number(item.approved || 0);
+                domainMap[item.domain].expended += Number(item.expended || 0);
+            });
+
+            const subsidyRemaining = subsidyApproved - subsidyExpended;
+            const subsidyRate = subsidyApproved > 0 ? (subsidyExpended / subsidyApproved) * 100 : 0;
+
+            document.getElementById('subsidyApproved').innerText = formatCurrency(subsidyApproved);
+            document.getElementById('subsidyExpended').innerText = formatCurrency(subsidyExpended);
+            document.getElementById('subsidyRemaining').innerText = formatCurrency(subsidyRemaining);
+            document.getElementById('subsidyRateBadge').innerText = formatPercent(subsidyRate) + ' 執行率';
+            document.getElementById('subsidyProgressText').innerText = formatPercent(subsidyRate);
+            document.getElementById('subsidyProgressBar').style.width = Math.min(subsidyRate, 100) + '%';
+
+            const matchingRemaining = matchingApproved - matchingExpended;
+            const matchingRate = matchingApproved > 0 ? (matchingExpended / matchingApproved) * 100 : 0;
+
+            document.getElementById('matchingApproved').innerText = formatCurrency(matchingApproved);
+            document.getElementById('matchingExpended').innerText = formatCurrency(matchingExpended);
+            document.getElementById('matchingRemaining').innerText = formatCurrency(matchingRemaining);
+            document.getElementById('matchingRateBadge').innerText = formatPercent(matchingRate) + ' 執行率';
+            document.getElementById('matchingProgressText').innerText = formatPercent(matchingRate);
+            document.getElementById('matchingProgressBar').style.width = Math.min(matchingRate, 100) + '%';
+
+            const tbody = document.getElementById('domainTableBody');
+            tbody.innerHTML = '';
+
+            const domainLabels = Object.keys(domainMap);
+            const domainApprovedList = [];
+            const domainExpendedList = [];
+
+            domainLabels.forEach(domainName => {
+                const data = domainMap[domainName];
+                const remaining = data.approved - data.expended;
+                const rate = data.approved > 0 ? (data.expended / data.approved) * 100 : 0;
+
+                domainApprovedList.push(data.approved);
+                domainExpendedList.push(data.expended);
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition border-b border-slate-100";
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-semibold text-slate-800">${domainName}</td>
+                    <td class="py-3 px-4 text-right font-medium">${formatCurrency(data.approved)}</td>
+                    <td class="py-3 px-4 text-right font-medium text-emerald-600">${formatCurrency(data.expended)}</td>
+                    <td class="py-3 px-4 text-right font-medium text-amber-600">${formatCurrency(remaining)}</td>
+                    <td class="py-3 px-4 text-center">
+                        <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${rate >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}">
+                            ${formatPercent(rate)}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            const ctx = document.getElementById('domainChart').getContext('2d');
+            if (charts.domainChart) charts.domainChart.destroy();
+
+            charts.domainChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: domainLabels,
+                    datasets: [
+                        { label: '核准金額', data: domainApprovedList, backgroundColor: '#94a3b8' },
+                        { label: '已核銷金額', data: domainExpendedList, backgroundColor: '#10b981' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+
+        function switchDomainCategoryTab(domain) {
+            currentDomainTab = domain;
+            renderDomainTabs();
+            renderSection3_DomainCategoryTab(domain);
+        }
+
+        function renderSection3_DomainCategoryTab(selectedDomain) {
+            const labelText = selectedDomain === 'ALL' ? '全計畫檢視' : `單一範疇/主計畫: ${selectedDomain}`;
+            document.getElementById('currentDomainLabel').innerText = labelText;
+            document.getElementById('currentDomainTabTitle').innerText = `${selectedDomain === 'ALL' ? '全計畫' : selectedDomain} - 各費用類別執行狀態`;
+
+            const filteredData = selectedDomain === 'ALL' 
+                ? rawBudgetData 
+                : rawBudgetData.filter(item => item.domain === selectedDomain);
+
+            const categories = ['人事費', '業務費', '設備費', '配合款'];
+            const stats = {
+                '人事費': { approved: 0, expended: 0 },
+                '業務費': { approved: 0, expended: 0 },
+                '設備費': { approved: 0, expended: 0 },
+                '配合款': { approved: 0, expended: 0 }
+            };
+
+            filteredData.forEach(item => {
+                const normalizedCat = normalizeCategory(item.category);
+                if (stats[normalizedCat]) {
+                    stats[normalizedCat].approved += Number(item.approved || 0);
+                    stats[normalizedCat].expended += Number(item.expended || 0);
+                }
+            });
+
+            const approvedArray = [];
+            const expendedArray = [];
+
+            categories.forEach(cat => {
+                const data = stats[cat];
+                const remaining = data.approved - data.expended;
+                const rate = data.approved > 0 ? (data.expended / data.approved) * 100 : 0;
+
+                approvedArray.push(data.approved);
+                expendedArray.push(data.expended);
+
+                document.getElementById(`approved-${cat}`).innerText = formatCurrency(data.approved);
+                document.getElementById(`expended-${cat}`).innerText = formatCurrency(data.expended);
+                document.getElementById(`remaining-${cat}`).innerText = formatCurrency(remaining);
+                document.getElementById(`rate-${cat}`).innerText = formatPercent(rate);
+                document.getElementById(`progress-${cat}`).style.width = Math.min(rate, 100) + '%';
+            });
+
+            const ctx = document.getElementById('expenseCategoryChart').getContext('2d');
+            if (charts.expenseCategoryChart) charts.expenseCategoryChart.destroy();
+
+            charts.expenseCategoryChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: categories,
+                    datasets: [
+                        { label: '核准金額', data: approvedArray, backgroundColor: '#cbd5e1' },
+                        { label: '已核銷金額', data: expendedArray, backgroundColor: '#3b82f6' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12 } } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+
+        function filterSubProjects() {
+            renderSection4_SubProjects();
+        }
+
+        function renderSection4_SubProjects() {
+            const container = document.getElementById('subProjectsList');
+            container.innerHTML = '';
+
+            const searchText = (document.getElementById('subProjectSearch').value || '').toLowerCase();
+            const selectedDomain = document.getElementById('subProjectDomainFilter').value;
+
+            const subProjectMap = {};
+
+            rawBudgetData.forEach(item => {
+                if (selectedDomain !== 'ALL' && item.domain !== selectedDomain) return;
+                if (searchText && !item.subProject.toLowerCase().includes(searchText) && !item.domain.toLowerCase().includes(searchText)) return;
+
+                if (!subProjectMap[item.subProject]) {
+                    subProjectMap[item.subProject] = {
+                        domain: item.domain,
+                        categories: {
+                            '人事費': { approved: 0, expended: 0 },
+                            '業務費': { approved: 0, expended: 0 },
+                            '設備費': { approved: 0, expended: 0 },
+                            '配合款': { approved: 0, expended: 0 }
+                        }
+                    };
+                }
+
+                const catKey = normalizeCategory(item.category);
+                if (subProjectMap[item.subProject].categories[catKey]) {
+                    subProjectMap[item.subProject].categories[catKey].approved += Number(item.approved || 0);
+                    subProjectMap[item.subProject].categories[catKey].expended += Number(item.expended || 0);
+                }
+            });
+
+            const subProjectKeys = Object.keys(subProjectMap);
+            if (subProjectKeys.length === 0) {
+                container.innerHTML = `<div class="bg-white p-8 text-center text-slate-400 rounded-xl border border-slate-200"><p>未找到符合條件的子計畫資料</p></div>`;
+                return;
+            }
+
+            subProjectKeys.forEach((subProjectName) => {
+                const subData = subProjectMap[subProjectName];
+                const categories = ['人事費', '業務費', '設備費', '配合款'];
+                let subTotalApproved = 0, subTotalExpended = 0;
+
+                categories.forEach(cat => {
+                    subTotalApproved += subData.categories[cat].approved;
+                    subTotalExpended += subData.categories[cat].expended;
+                });
+
+                const subTotalRemaining = subTotalApproved - subTotalExpended;
+                const subTotalRate = subTotalApproved > 0 ? (subTotalExpended / subTotalApproved) * 100 : 0;
+
+                const card = document.createElement('div');
+                card.className = "bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition hover:shadow-md";
+
+                let catRowsHtml = '';
+                categories.forEach(cat => {
+                    const cData = subData.categories[cat];
+                    const cRemaining = cData.approved - cData.expended;
+                    const cRate = cData.approved > 0 ? (cData.expended / cData.approved) * 100 : 0;
+
+                    catRowsHtml += `
+                        <tr class="hover:bg-slate-50 text-xs">
+                            <td class="py-2.5 px-3 font-semibold text-slate-700">${cat}</td>
+                            <td class="py-2.5 px-3 text-right text-slate-600 font-medium">${formatCurrency(cData.approved)}</td>
+                            <td class="py-2.5 px-3 text-right text-emerald-600 font-medium">${formatCurrency(cData.expended)}</td>
+                            <td class="py-2.5 px-3 text-right text-amber-600 font-medium">${formatCurrency(cRemaining)}</td>
+                            <td class="py-2.5 px-3 text-center">
+                                <span class="px-2 py-0.5 rounded font-bold ${cRate >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}">
+                                    ${formatPercent(cRate)}
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <div class="bg-slate-50 p-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div class="flex items-center space-x-3">
+                            <span class="px-2.5 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded-md">${subData.domain}</span>
+                            <h3 class="font-bold text-slate-800 text-base">${subProjectName}</h3>
+                        </div>
+                        <div class="flex items-center space-x-4 text-xs">
+                            <div><span class="text-slate-400">核准:</span><span class="font-bold text-slate-700 ml-1">${formatCurrency(subTotalApproved)}</span></div>
+                            <div><span class="text-slate-400">核銷:</span><span class="font-bold text-emerald-600 ml-1">${formatCurrency(subTotalExpended)}</span></div>
+                            <div><span class="text-slate-400">剩餘:</span><span class="font-bold text-amber-600 ml-1">${formatCurrency(subTotalRemaining)}</span></div>
+                            <span class="px-2.5 py-1 rounded-full text-xs font-extrabold ${subTotalRate >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}">執行率 ${formatPercent(subTotalRate)}</span>
+                        </div>
+                    </div>
+                    <div class="p-4 overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="text-[11px] font-bold text-slate-400 uppercase border-b border-slate-100">
+                                    <th class="py-1.5 px-3">費用項目</th><th class="py-1.5 px-3 text-right">核准金額</th><th class="py-1.5 px-3 text-right">已核銷金額</th><th class="py-1.5 px-3 text-right">剩餘金額</th><th class="py-1.5 px-3 text-center">執行率</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">${catRowsHtml}</tbody>
+                        </table>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+    </script>
+</body>
+</html>
