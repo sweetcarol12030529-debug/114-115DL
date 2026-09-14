@@ -59,8 +59,8 @@
                     <i class="fa-solid fa-chart-pie text-xl"></i>
                 </div>
                 <div>
-                    <h1 class="text-lg font-bold tracking-wide">大林慈濟醫院深耕計畫第一階段專案經費執行率儀表板</h1>
-                    <p class="text-xs text-slate-400">統計區間：114年9月1日至115年12月31日</p>
+                    <h1 class="text-lg font-bold tracking-wide">專案經費執行率儀表板</h1>
+                    <p class="text-xs text-slate-400">Google 試算表即時連線分析系統</p>
                 </div>
             </div>
 
@@ -601,7 +601,14 @@
 
         function updateLastUpdatedTime() {
             const now = new Date();
-            document.getElementById('lastUpdatedTime').innerText = `更新時間: ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            const year = now.getFullYear();
+            const month = (now.getMonth() + 1).toString().padStart(2, '0');
+            const day = now.getDate().toString().padStart(2, '0');
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            
+            document.getElementById('lastUpdatedTime').innerText = `更新時間: ${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
         }
 
         function handleFileUpload(event) {
